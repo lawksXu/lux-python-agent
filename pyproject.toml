@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=84.0.0,<85.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lux-python-agent"
+version = "0.1.0"
+description = "Python agent service for Lux"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aiokafka==0.14.0",
+    "aiosqlite==0.22.1",
+    "fastapi==0.141.1",
+    "httpx==0.28.1",
+    "langchain-core==1.6.9",
+    "langchain-openai==1.6.0",
+    "langgraph==1.2.14",
+    "langgraph-checkpoint-sqlite==3.1.1",
+    "pydantic==2.13.5",
+    "uvicorn==0.53.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+extend-exclude = ["build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
