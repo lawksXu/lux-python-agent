@@ -1,6 +1,7 @@
 """Agent-owned ChatOpenAI execution and retrieval of the original response only."""
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Annotated, Literal
 
@@ -33,6 +34,7 @@ from lux_agent.store import AgentStore, ModelProviderBinding, content_hash
 
 MODEL = "gpt-6-luna"
 ENDPOINT = "https://api.openai.com/v1"
+_LOGGER = logging.getLogger(__name__)
 
 
 class ProviderBlock(BaseModel):
@@ -360,10 +362,24 @@ class OpenAIModelExecutor:
                     "MODEL_PROVIDER_REJECTED",
                     "Provider rejected the original model request before acceptance",
                 ) from None
+            _LOGGER.warning(
+                "Model submission outcome unknown "
+                "(execution_id=%s exception_type=%s status_code=%s)",
+                request.execution_id,
+                type(error).__name__,
+                error.status_code,
+            )
             raise ExecutionUnknown(
                 "Original model request requires reconciliation"
             ) from None
         except APIError as error:
+            _LOGGER.warning(
+                "Model submission outcome unknown "
+                "(execution_id=%s exception_type=%s status_code=%s)",
+                request.execution_id,
+                type(error).__name__,
+                None,
+            )
             raise ExecutionUnknown(
                 "Original model request requires reconciliation"
             ) from error

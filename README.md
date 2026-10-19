@@ -101,6 +101,8 @@ At model invocation, descriptors become transient verified JPEG `input_image` bl
 
 Provider receipt ownership is recorded before invocation-side hydration with `dispatch_started=false`, then durably switches true immediately before the SDK request. Cancelled/crashed false-phase work settles `MODEL_NOT_SUBMITTED` without network or resubmission. Existing receipts upgrade with true to preserve prior uncertainty. Once dispatch starts, missing IDs remain unresolved; known IDs recover only by original GET without media refetch.
 
+Uncertain OpenAI SDK failures log only the execution ID, exception class and HTTP status code when available. Provider error bodies, headers, exception messages and credentials are excluded. Use the original receipt to reconcile the outcome; the diagnostic does not authorize resubmission.
+
 ## Original model evidence reconciliation
 
 When explicitly enabled with a token, trusted operator and allowed account references, GET `/internal/model-reconciliation` lists unresolved provider executions; GET `/{execution_id}` reads a compact scoped view; POST `/{execution_id}/original-receipt` attaches a proven original response ID. The request contains the unchanged binding, run/turn IDs, response ID, evidence reference and reason. Authenticated server configuration supplies the audit actor. Original binding/hash/account/org/project must match; undispatched work, terminal/conflicting evidence and body actor fields are rejected. Receipt and immutable audit commit together; exact replay is idempotent.

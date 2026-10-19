@@ -824,7 +824,9 @@ def test_rejected_original_does_not_block_later_session_input(tmp_path):
 
 
 @pytest.mark.parametrize("accepted_id", [False, True])
-def test_uncertain_or_already_accepted_error_remains_unknown(tmp_path, accepted_id):
+def test_uncertain_or_already_accepted_error_remains_unknown(
+    tmp_path, accepted_id, caplog
+):
     async def scenario():
         from openai import APIStatusError
 
@@ -837,8 +839,12 @@ def test_uncertain_or_already_accepted_error_remains_unknown(tmp_path, accepted_
                 yield event("response.created", response=response("in_progress"))
                 raise APIStatusError(
                     "Sensitive stream failure",
-                    response=httpx.Response(400, request=calls[0]),
-                    body={"error": "stream failure"},
+                    response=httpx.Response(
+                        400,
+                        request=calls[0],
+                        headers={"X-Private-Header": "Sensitive header value"},
+                    ),
+                    body={"error": "Sensitive response body"},
                 )
 
         def handler(req):
@@ -854,9 +860,10 @@ def test_uncertain_or_already_accepted_error_remains_unknown(tmp_path, accepted_
                 json={
                     "error": {
                         "type": "server_error",
-                        "message": "Uncertain upstream outcome",
+                        "message": "Sensitive response body",
                     }
                 },
+                headers={"X-Private-Header": "Sensitive header value"},
             )
 
         with AgentStore(tmp_path / "agent.db") as store:
@@ -877,5 +884,74 @@ def test_uncertain_or_already_accepted_error_remains_unknown(tmp_path, accepted_
                 saved = store.model_provider_receipt(req.execution_id)
                 assert saved.response_id == ("resp_original" if accepted_id else None)
                 assert len(calls) == 1
+                diagnostics = [
+                    record
+                    for record in caplog.records
+                    if record.name == "lux_agent.openai_model"
+                ]
+                assert len(diagnostics) == 1
+                diagnostic = diagnostics[0]
+                message = diagnostic.getMessage()
+                assert req.execution_id in message
+                assert (
+                    "APIStatusError" if accepted_id else "OpenAIAPIError"
+                ) in message
+                assert f"status_code={400 if accepted_id else 503}" in message
+                assert diagnostic.exc_info is None
+                assert diagnostic.stack_info is None
+                for sensitive in (
+                    "Sensitive stream failure",
+                    "Sensitive response body",
+                    "Sensitive header value",
+                    "offline-test-key",
+                ):
+                    assert sensitive not in caplog.text
+
+    asyncio.run(scenario())
+
+
+def test_transport_error_diagnostics_do_not_log_exception_details(tmp_path, caplog):
+    async def scenario():
+        from lux_agent.openai_model import OpenAIModelExecutor
+
+        calls = []
+
+        def handler(http_request):
+            calls.append(http_request.method)
+            raise httpx.ReadError("Sensitive transport message")
+
+        with AgentStore(tmp_path / "agent.db") as store:
+            req = request()
+            prepare(store, req)
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                executor = OpenAIModelExecutor(
+                    store,
+                    api_key="offline-test-key",
+                    account_ref="test-account",
+                    http_client=client,
+                )
+                with pytest.raises(ExecutionUnknown):
+                    async for _ in executor.stream(req):
+                        pass
+                store.execution_unknown(req.execution_id)
+                assert await executor.reconcile(req) is None
+                assert store.execution(req.execution_id).state == "UNKNOWN"
+                assert calls == ["POST"]
+                diagnostics = [
+                    record
+                    for record in caplog.records
+                    if record.name == "lux_agent.openai_model"
+                ]
+                assert len(diagnostics) == 1
+                diagnostic = diagnostics[0]
+                assert req.execution_id in diagnostic.getMessage()
+                assert "OpenAIConnectionError" in diagnostic.getMessage()
+                assert "status_code=None" in diagnostic.getMessage()
+                assert diagnostic.exc_info is None
+                assert diagnostic.stack_info is None
+                assert "Sensitive transport message" not in caplog.text
+                assert "offline-test-key" not in caplog.text
 
     asyncio.run(scenario())
